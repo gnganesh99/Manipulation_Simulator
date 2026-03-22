@@ -11,7 +11,7 @@ An interactive simulation tool for placing and moving circular objects within a 
 
 ## 🚀 Launch App
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://YOUR-APP-NAME.streamlit.app)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/)
 
 > Replace the link above with your Streamlit Cloud URL after deployment (see below).
 
