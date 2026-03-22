@@ -1,1 +1,3 @@
 prepare_gitignore/
+.venv/
+__pycache__/
