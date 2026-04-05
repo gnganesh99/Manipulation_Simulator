@@ -89,8 +89,8 @@ function draw() {
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
   if (target) {
-    ctx.strokeStyle = '#556B2F';
-    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#E8A35A';
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(target.x - 12, target.y); ctx.lineTo(target.x + 12, target.y);
     ctx.moveTo(target.x, target.y - 12); ctx.lineTo(target.x, target.y + 12);
@@ -237,6 +237,13 @@ window.addEventListener('message', function(event) {
 
   // Always sync objects and mode from Python
   objects = args.objects || [];
+  target = args.target || null;
+  if (target) {
+    tgtPos.innerHTML = 'x: ' + (target.x / CANVAS_SIZE).toFixed(3) +
+      ' &nbsp;&nbsp; y: ' + (target.y / CANVAS_SIZE).toFixed(3);
+  } else {
+    tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
+  }
   var newMode = args.mode || 'Ideal';
   if (newMode !== mode) {
     mode = newMode;
@@ -266,8 +273,6 @@ window.addEventListener('message', function(event) {
     // Subsequent renders: sync selectedId from Python if it changed (e.g. after seed)
     if (args.selected_id !== null && args.selected_id !== undefined && args.selected_id !== selectedId) {
       selectedId = args.selected_id;
-      target = null;
-      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
     }
   }
 
@@ -281,9 +286,9 @@ window.addEventListener('message', function(event) {
     if (animObj) {
       animObj.x = pa.from_x;
       animObj.y = pa.from_y;
-      target = null;
-      tgtPos.innerHTML = 'x: ' + (pa.to_x / CANVAS_SIZE).toFixed(3) +
-        ' &nbsp;&nbsp; y: ' + (pa.to_y / CANVAS_SIZE).toFixed(3);
+      target = { x: pa.target_x, y: pa.target_y };
+      tgtPos.innerHTML = 'x: ' + (pa.target_x / CANVAS_SIZE).toFixed(3) +
+        ' &nbsp;&nbsp; y: ' + (pa.target_y / CANVAS_SIZE).toFixed(3);
       statusEl.textContent = pa.mode + ' result: obj ' + pa.id + ' \u2192 (' +
         (pa.to_x / CANVAS_SIZE).toFixed(3) + ', ' + (pa.to_y / CANVAS_SIZE).toFixed(3) + ')';
       animateTo(animObj, pa.to_x, pa.to_y, 600, null);

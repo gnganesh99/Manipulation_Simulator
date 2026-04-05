@@ -61,17 +61,15 @@ with right_col:
     st.markdown('<div class="section-title">Actions</div>', unsafe_allow_html=True)
     action1 = st.slider("Action 1", min_value=10, max_value=90, value=50, key="action1")
     action2 = st.slider("Action 2", min_value=10, max_value=90, value=50, key="action2")
+    st.markdown('<div class="section-title">Operation Mode</div>', unsafe_allow_html=True)
+    st.radio(
+        "Operation Mode",
+        options=["Ideal", "Predictive"],
+        horizontal=True,
+        key="app_mode",
+        label_visibility="collapsed",
+    )
 
-    st.markdown('<hr>', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">Tracker</div>', unsafe_allow_html=True)
-    st.markdown("""
-    <div class="metric-box">
-      <div class="metric-label">Live tracker</div>
-      <div class="metric-value" style="font-size:0.75rem; color:#999;">Displayed below the canvas — updates instantly as you select and target objects.</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Future: prediction hook ──────────────────────────────────────────────
     # from prediction_utils import predict
     # if sel and tgt:
     #     state  = [sel['x'], sel['y'], tgt['x'], tgt['y']]
@@ -93,6 +91,8 @@ with left_col:
         st.session_state.tool = "cross"
     if "app_mode" not in st.session_state:
         st.session_state.app_mode = "Ideal"
+    if "target_pos" not in st.session_state:
+        st.session_state.target_pos = None
 
     # Seed button pressed → regenerate objects
     if seed_btn:
@@ -131,6 +131,7 @@ with left_col:
                     t = np.array([[prev["tx"], prev["ty"]]])
                     a = np.array([[action1, action2]])
                     mode = prev.get("mode", st.session_state.app_mode).lower()
+                    st.session_state.target_pos = {"x": prev["tx"] * 500, "y": prev["ty"] * 500}
                     ns = get_next_state(state=s, target=t, action=a, mode=mode)
                     pred_x = float(np.clip(ns[0, 0], 0, 1)) * 500
                     pred_y = float(np.clip(ns[0, 1], 0, 1)) * 500
@@ -142,6 +143,8 @@ with left_col:
                             "from_y": sel["y"],
                             "to_x": pred_x,
                             "to_y": pred_y,
+                            "target_x": prev["tx"] * 500,
+                            "target_y": prev["ty"] * 500,
                             "mode": mode,
                         }
                         sel["x"] = pred_x
@@ -158,6 +161,7 @@ with left_col:
         selected_id=st.session_state.get("selected_id"),
         tool=st.session_state.get("tool", "cross"),
         mode=st.session_state.app_mode,
+        target=st.session_state.get("target_pos"),
         pending_animate=pending_animate,
         key="canvas",
         default=None,
@@ -165,14 +169,3 @@ with left_col:
 
 
 # ── MODE TOGGLE ───────────────────────────────────────────────────────────────
-st.markdown("<hr>", unsafe_allow_html=True)
-_, col_toggle, _ = st.columns([1, 2, 1])
-with col_toggle:
-    st.markdown('<div class="section-title">Operation Mode</div>', unsafe_allow_html=True)
-    st.radio(
-        "Operation Mode",
-        options=["Ideal", "Predictive"],
-        horizontal=True,
-        key="app_mode",
-        label_visibility="collapsed",
-    )
