@@ -124,13 +124,14 @@ with left_col:
                     sel["x"] = prev["x"]
                     sel["y"] = prev["y"]
 
-            elif evtype == "predict_request" and st.session_state.app_mode == "Predictive":
+            elif evtype == "predict_request":
                 try:
-                    from prediction_utils import sample_next_state
+                    from prediction_utils import get_next_state
                     s = np.array([[prev["sx"], prev["sy"]]])
                     t = np.array([[prev["tx"], prev["ty"]]])
-                    a = np.array([[action1, action2]])   # shape (1,2) — required by sample_next_state
-                    ns = sample_next_state(s, t, a)
+                    a = np.array([[action1, action2]])
+                    mode = prev.get("mode", st.session_state.app_mode).lower()
+                    ns = get_next_state(state=s, target=t, action=a, mode=mode)
                     pred_x = float(np.clip(ns[0, 0], 0, 1)) * 500
                     pred_y = float(np.clip(ns[0, 1], 0, 1)) * 500
                     sel = next((o for o in st.session_state.objects if o["id"] == prev["id"]), None)
@@ -141,6 +142,7 @@ with left_col:
                             "from_y": sel["y"],
                             "to_x": pred_x,
                             "to_y": pred_y,
+                            "mode": mode,
                         }
                         sel["x"] = pred_x
                         sel["y"] = pred_y

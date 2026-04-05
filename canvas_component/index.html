@@ -198,24 +198,17 @@ canvas.addEventListener('click', function(e) {
     tgtPos.innerHTML = 'x: ' + (mx / CANVAS_SIZE).toFixed(3) + ' &nbsp;&nbsp; y: ' + (my / CANVAS_SIZE).toFixed(3);
     draw();
 
-    if (mode === 'Ideal') {
-      statusEl.textContent = 'moving obj ' + obj.id + ' to (' +
-        (mx / CANVAS_SIZE).toFixed(3) + ', ' + (my / CANVAS_SIZE).toFixed(3) + ')';
-      animateTo(obj, mx, my, 400, function(o) {
-        sendValue({ type: 'move', id: o.id, x: o.x, y: o.y, event_id: Date.now() });
-      });
-    } else {
-      statusEl.textContent = 'computing prediction for obj ' + obj.id + '...';
-      sendValue({
-        type: 'predict_request',
-        id: obj.id,
-        sx: obj.x / CANVAS_SIZE,
-        sy: obj.y / CANVAS_SIZE,
-        tx: mx / CANVAS_SIZE,
-        ty: my / CANVAS_SIZE,
-        event_id: Date.now()
-      });
-    }
+    statusEl.textContent = 'computing ' + mode.toLowerCase() + ' next state for obj ' + obj.id + '...';
+    sendValue({
+      type: 'predict_request',
+      id: obj.id,
+      sx: obj.x / CANVAS_SIZE,
+      sy: obj.y / CANVAS_SIZE,
+      tx: mx / CANVAS_SIZE,
+      ty: my / CANVAS_SIZE,
+      mode: mode,
+      event_id: Date.now()
+    });
   }
 });
 
@@ -291,7 +284,7 @@ window.addEventListener('message', function(event) {
       target = null;
       tgtPos.innerHTML = 'x: ' + (pa.to_x / CANVAS_SIZE).toFixed(3) +
         ' &nbsp;&nbsp; y: ' + (pa.to_y / CANVAS_SIZE).toFixed(3);
-      statusEl.textContent = 'model predicted: obj ' + pa.id + ' \u2192 (' +
+      statusEl.textContent = pa.mode + ' result: obj ' + pa.id + ' \u2192 (' +
         (pa.to_x / CANVAS_SIZE).toFixed(3) + ', ' + (pa.to_y / CANVAS_SIZE).toFixed(3) + ')';
       animateTo(animObj, pa.to_x, pa.to_y, 600, null);
     }

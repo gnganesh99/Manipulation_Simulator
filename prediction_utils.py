@@ -1,43 +1,140 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-from collections import deque
-import random
 import numpy as np
-import os
-import h5py
-from sklearn.model_selection import train_test_split
-
-from torch.utils.data import DataLoader, Dataset
-import matplotlib.pyplot as plt
-import h5py
+import torch
 import json
 
 model_path = "./models/gmm_model0.pt"
 meta_path = "./models/gmm_model0_meta.json"
 
+_STATE_DICT_CACHE = {}
+_META_CACHE = {}
 
 
 
-def get_next_state(s, t, a, mode = 'ideal'):
 
-    s = np.concatenate([s, t], axis=-1)  # Concatenate the targets
-    a = ((a - 10) / 80 )* 2 - 1  # Normalize actions to [-1, 1]
+def get_next_state(state, target, action, mode="ideal"):
+    mode = str(mode).strip().lower()
 
-    s = torch.as_tensor(s, dtype=torch.float32).clip(0, 1)
-    a = torch.as_tensor(a, dtype=torch.float32).clip(-1, 1)
+    state = np.asarray(state, dtype=np.float32)
+    target = np.asarray(target, dtype=np.float32)
+    action = np.asarray(action, dtype=np.float32)
 
-    next_state = sample_next_state(model_path, meta_path, s, a, mode = mode)[0]
-    next_state = next_state.clip(0, 1)
+    model_state = np.concatenate([state, target], axis=-1)
+
+    # Normalize slider actions from [10, 90] into [-1, 1] and append a fixed offset.
+    action = ((action - 10.0) / 80.0) * 2.0 - 1.0
+    offset = np.zeros((action.shape[0], 2), dtype=np.float32)
+    model_action = np.concatenate([action, offset], axis=-1)
+
+    state_tensor = torch.as_tensor(model_state, dtype=torch.float32).clip(0, 1)
+    action_tensor = torch.as_tensor(model_action, dtype=torch.float32).clip(-1, 1)
+
+    if mode == "ideal":
+        sigmoid_type = lambda x: 1 / (1 + np.exp(-10 * x))
+        delta_s = target - state
+
+        action0 = action_tensor[:, 0].cpu().numpy().ravel()
+        action1 = action_tensor[:, 1].cpu().numpy().ravel()
+        delta_factor = (1 - sigmoid_type(action0[0] - (-0.5))) * sigmoid_type(action1[0] - 0.5)
+        next_state = state + delta_s * delta_factor
+        return np.asarray(next_state, dtype=np.float32).clip(0, 1)
+
+    next_state = sample_next_state(
+        model_path=model_path,
+        meta_path=meta_path,
+        state_sample=state_tensor,
+        action_sample=action_tensor,
+        mode=mode,
+    )[0]
+    return np.asarray(next_state, dtype=np.float32).clip(0, 1)
+
+
+
+
+def sample_next_state(model_path, meta_path, state_sample, action_sample, mode="predictive", device=None):
+    mode = str(mode).strip().lower()
+    if mode not in ('ideal', 'predictive'):
+        mode = 'predictive'
+
+    if device is None:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+ 
     
-    return next_state
+    model_meta = load_model_meta(meta_path)
+    state_dim = model_meta.get('state_dim')
+    action_dim = model_meta.get('action_dim')
+
+    assert state_sample.shape[1] == state_dim, f"Expected state dimension {state_dim}, got {state_sample.shape[1]}"
+    assert action_sample.shape[1] == action_dim, f"Expected action dimension {action_dim}, got {action_sample.shape[1]}"
+    
+
+    with torch.no_grad():
+        state_sample = state_sample.to(device)
+        action_sample = action_sample.to(device)
+        dist, delta_pred_norm = run_gmm_state_dict_inference(
+            model_path=model_path,
+            model_meta=model_meta,
+            state_sample=state_sample,
+            action_sample=action_sample,
+            device=device,
+        )
+
+    delta_norm = create_delta_norm_from_meta(meta_path)
+
+    delta_pred_norm = delta_pred_norm.cpu().numpy()
+    delta_pred = delta_norm.denormalize(delta_pred_norm)
+    
+
+    state_np = state_sample.cpu().numpy()
+    target_state = state_np[:, 2:4]
+
+    
+    pred_next_state = target_state + delta_pred
 
 
+    
+
+    return pred_next_state, delta_norm
 
 
+def load_model_meta(meta_path):
+    cached = _META_CACHE.get(meta_path)
+    if cached is None:
+        with open(meta_path, "r") as f:
+            cached = json.load(f)
+        _META_CACHE[meta_path] = cached
+    return cached
 
 
+def load_model_state_dict(model_path, device):
+    cache_key = (model_path, str(device))
+    cached = _STATE_DICT_CACHE.get(cache_key)
+    if cached is None:
+        raw_state = torch.load(model_path, map_location=device)
+        cached = {key: value.to(device) for key, value in raw_state.items()}
+        _STATE_DICT_CACHE[cache_key] = cached
+    return cached
+
+
+def linear(x, weight, bias):
+    return x @ weight.T + bias
+
+
+def run_gmm_state_dict_inference(model_path, model_meta, state_sample, action_sample, device):
+    state_dict = load_model_state_dict(model_path, device)
+    num_components = int(model_meta["num_components"])
+
+    x = torch.cat([state_sample, action_sample], dim=-1)
+    x = torch.relu(linear(x, state_dict["net.0.weight"], state_dict["net.0.bias"]))
+    x = torch.relu(linear(x, state_dict["net.2.weight"], state_dict["net.2.bias"]))
+
+    coeff_logits = linear(x, state_dict["coeff.weight"], state_dict["coeff.bias"])
+    mixture_weights = torch.softmax(coeff_logits, dim=-1)
+
+    mu = linear(x, state_dict["mu.weight"], state_dict["mu.bias"]).view(-1, num_components, 2)
+    delta_pred_norm = (mixture_weights.unsqueeze(-1) * mu).sum(dim=1)
+
+    return mixture_weights, delta_pred_norm
 
 
 def create_delta_norm_from_meta(meta_path):
@@ -67,62 +164,6 @@ def create_delta_norm_from_meta(meta_path):
             delta_norm_obj.std = std
 
     return delta_norm_obj
-
-
-def sample_next_state(model_path, meta_path, state_sample, action_sample, device=None, mode = 'ideal'):
-
-    if device is None:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
- 
-    
-    with open(meta_path, 'r') as f:
-        model_meta = json.load(f)
-        state_dim = model_meta.get('state_dim')  # Default to 4 if not specified
-        action_dim = model_meta.get('action_dim')  # Default to 2 if not specified
-
-    assert state_sample.shape[1] == state_dim, f"Expected state dimension {state_dim}, got {state_sample.shape[1]}"
-    assert action_sample.shape[1] == action_dim, f"Expected action dimension {action_dim}, got {action_sample.shape[1]}"
-    
-
-    inference_model = torch.jit.load(model_path)
-
-    inference_model.load_state_dict(torch.load(model_path, map_location=device))
-    inference_model.eval()
-
-   
-
-    with torch.no_grad():
-        dist, delta_pred_norm = inference_model(state_sample, action_sample)
-
-    delta_norm = create_delta_norm_from_meta(meta_path)
-
-    delta_pred_norm = delta_pred_norm.cpu().numpy()
-    delta_pred = delta_norm.denormalize(delta_pred_norm)
-    
-
-    state_np = state_sample.cpu().numpy()
-    target_state = state_np[:, 2:4]
-
-    
-    pred_next_state = target_state + delta_pred
-
-
-    if mode == 'ideal':
-        sigmoid_type = lambda x: 1 / (1 + np.exp(-10*x))
-        curr_state = state_np[:, :2]
-        delta_s = target_state - curr_state
-
-        action0 = action_sample[:, 0].cpu().numpy().ravel()
-        action1 = action_sample[:, 1].cpu().numpy().ravel()
-        delta_factor = (1-sigmoid_type(action0[0] - (-0.5))) * sigmoid_type(action1[0] - (0.5))  # Add sigmoid-based modulation at action
-        pred_next_state = target_state + delta_s * delta_factor
-
-    
-
-    return pred_next_state, delta_norm
-
-
 
     
 
