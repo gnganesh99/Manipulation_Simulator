@@ -1,6 +1,9 @@
 import streamlit as st
 import json
 import random
+import numpy as np
+import os
+import streamlit.components.v1 as stc
 
 st.set_page_config(page_title="Object Mover", layout="wide")
 
@@ -40,6 +43,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown("<h1>OBJECT MOVER / SIMULATION INTERFACE</h1>", unsafe_allow_html=True)
+
+# ── Bidirectional canvas component ───────────────────────────────────────────
+_canvas = stc.declare_component(
+    "simulator_canvas",
+    path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "canvas_component"),
+)
 
 left_col, right_col = st.columns([3, 2], gap="large")
 
@@ -82,6 +91,8 @@ with left_col:
         st.session_state.selected_id = 0
     if "tool" not in st.session_state:
         st.session_state.tool = "cross"
+    if "app_mode" not in st.session_state:
+        st.session_state.app_mode = "Ideal"
 
     # Seed button pressed → regenerate objects
     if seed_btn:
@@ -96,238 +107,70 @@ with left_col:
         st.session_state.selected_pos = None
         st.session_state.target_pos = None
 
-    # Serialize state for JS
-    objects_json  = json.dumps(st.session_state.objects)
-    selected_json = json.dumps(st.session_state.selected_id)
-    tool_json     = json.dumps(st.session_state.tool)
+    # ── Process events from the previous canvas interaction ──────────────────
+    prev = st.session_state.get("canvas")
+    if prev and isinstance(prev, dict):
+        eid = prev.get("event_id", 0)
+        if eid != st.session_state.get("_last_eid", -1):
+            st.session_state._last_eid = eid
+            evtype = prev.get("type")
 
-    canvas_html = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<style>
-  * {{ margin:0; padding:0; box-sizing:border-box; }}
-  body {{ background:#f5f5f5; display:flex; flex-direction:column; align-items:flex-start; padding:4px; }}
-  #toolbar {{
-    display:flex; align-items:center; margin-bottom: 8px; gap:6px;
-  }}
-  .tbtn {{
-    width:34px; height:34px; background:#efefef; border:1px solid #ccc;
-    border-radius:3px; cursor:pointer; display:flex; align-items:center;
-    justify-content:center; font-size:16px; transition: all 0.12s;
-    color: #555; user-select:none;
-  }}
-  .tbtn.active {{ background:#e0e0e0; border-color:#888; color:#111; box-shadow:0 0 0 1px #bbb; }}
-  canvas {{
-    background:#FFF8F0; border:2px solid #556B2F;
-    image-rendering: pixelated;
-  }}
-  #status {{
-    font-family: 'JetBrains Mono', monospace; font-size:10px;
-    color:#888; margin-top:6px; letter-spacing:0.08em;
-  }}
-  #tracker {{
-    margin-top: 12px; width: 510px;
-    font-family: 'JetBrains Mono', monospace;
-  }}
-  .tr-label {{
-    font-size: 9px; color: #999; text-transform: uppercase;
-    letter-spacing: 0.12em; margin-bottom: 3px;
-  }}
-  .tr-value {{
-    font-size: 12px; color: #1a1a1a; letter-spacing: 0.05em;
-    background: #fff; border: 1px solid #ddd; border-radius: 2px;
-    padding: 5px 10px; margin-bottom: 8px;
-  }}
-</style>
-</head>
-<body>
-<div id="toolbar">
-  <div class="tbtn" id="btn-arrow" title="Select (Arrow)">⬆</div>
-  <div class="tbtn" id="btn-cross" title="Set Target (Crosshair)">✛</div>
-</div>
-<canvas id="c" width="500" height="500"></canvas>
-<div id="status">no object selected</div>
-<div id="tracker">
-  <div class="tr-label">Current Position (normalized)</div>
-  <div id="cur-pos" class="tr-value">x: &mdash; &nbsp;&nbsp; y: &mdash;</div>
-  <div class="tr-label">Target Position (normalized)</div>
-  <div id="tgt-pos" class="tr-value">x: &mdash; &nbsp;&nbsp; y: &mdash;</div>
-</div>
+            if evtype == "select":
+                st.session_state.selected_id = prev["id"]
 
-<script>
-const CANVAS_SIZE = 500;
-const RADIUS = 12;
+            elif evtype == "move":
+                sel = next((o for o in st.session_state.objects if o["id"] == prev["id"]), None)
+                if sel:
+                    sel["x"] = prev["x"]
+                    sel["y"] = prev["y"]
 
-let objects   = {objects_json};
-let selectedId = {selected_json};
-let tool       = {tool_json};
-let target     = null;
+            elif evtype == "predict_request" and st.session_state.app_mode == "Predictive":
+                try:
+                    from prediction_utils import sample_next_state
+                    s = np.array([[prev["sx"], prev["sy"]]])
+                    t = np.array([[prev["tx"], prev["ty"]]])
+                    a = np.array([[action1, action2]])   # shape (1,2) — required by sample_next_state
+                    ns = sample_next_state(s, t, a)
+                    pred_x = float(np.clip(ns[0, 0], 0, 1)) * 500
+                    pred_y = float(np.clip(ns[0, 1], 0, 1)) * 500
+                    sel = next((o for o in st.session_state.objects if o["id"] == prev["id"]), None)
+                    if sel:
+                        st.session_state.pending_animate = {
+                            "id": prev["id"],
+                            "from_x": sel["x"],
+                            "from_y": sel["y"],
+                            "to_x": pred_x,
+                            "to_y": pred_y,
+                        }
+                        sel["x"] = pred_x
+                        sel["y"] = pred_y
+                except Exception as e:
+                    st.error(f"Prediction error: {e}")
 
-const canvas  = document.getElementById('c');
-const ctx     = canvas.getContext('2d');
-const status  = document.getElementById('status');
-const btnArrow = document.getElementById('btn-arrow');
-const btnCross = document.getElementById('btn-cross');
-const curPos   = document.getElementById('cur-pos');
-const tgtPos   = document.getElementById('tgt-pos');
+    # Consume pending_animate for this render cycle only
+    pending_animate = st.session_state.pop("pending_animate", None)
 
-// ── tool buttons ──────────────────────────────────────────────────────────
-function setTool(t) {{
-  tool = t;
-  btnArrow.classList.toggle('active', t === 'arrow');
-  btnCross.classList.toggle('active', t === 'cross');
-  canvas.style.cursor = t === 'cross' ? 'crosshair' : 'default';
-  sendToStreamlit({{ type:'tool', tool:t }});
-}}
-btnArrow.addEventListener('click', () => setTool('arrow'));
-btnCross.addEventListener('click', () => setTool('cross'));
-// crosshair is default — canvas cursor set accordingly
-setTool(tool);
-// always show crosshair cursor inside canvas regardless of tool
-canvas.addEventListener('mouseenter', () => {{ canvas.style.cursor = tool === 'arrow' ? 'default' : 'crosshair'; }});
+    # ── Render canvas component ───────────────────────────────────────────────
+    _canvas(
+        objects=st.session_state.objects,
+        selected_id=st.session_state.get("selected_id"),
+        tool=st.session_state.get("tool", "cross"),
+        mode=st.session_state.app_mode,
+        pending_animate=pending_animate,
+        key="canvas",
+        default=None,
+    )
 
-// ── draw ──────────────────────────────────────────────────────────────────
-function draw() {{
-  ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  // background — light cream
-  ctx.fillStyle = '#FFF8F0';
-  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-
-  // target marker
-  if (target) {{
-    ctx.strokeStyle = '#556B2F';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(target.x - 12, target.y);
-    ctx.lineTo(target.x + 12, target.y);
-    ctx.moveTo(target.x, target.y - 12);
-    ctx.lineTo(target.x, target.y + 12);
-    ctx.stroke();
-    ctx.strokeStyle = '#556B2F';
-    ctx.beginPath();
-    ctx.arc(target.x, target.y, 6, 0, Math.PI*2);
-    ctx.stroke();
-  }}
-
-  // objects
-  objects.forEach(obj => {{
-    const isSel = obj.id === selectedId;
-    if (isSel) {{
-      // selection ring — olive green
-      ctx.strokeStyle = '#556B2F';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(obj.x, obj.y, RADIUS + 5, 0, Math.PI*2);
-      ctx.stroke();
-    }}
-    ctx.fillStyle = '#1a1a1a';
-    ctx.strokeStyle = isSel ? '#556B2F' : '#444';
-    ctx.lineWidth = isSel ? 2 : 1;
-    ctx.beginPath();
-    ctx.arc(obj.x, obj.y, RADIUS, 0, Math.PI*2);
-    ctx.fill();
-    ctx.stroke();
-  }});
-}}
-
-// ── animation for moving selected object to target ────────────────────────
-let animFrame = null;
-
-function animateTo(obj, tx, ty, duration=400) {{
-  if (animFrame) cancelAnimationFrame(animFrame);
-  const sx = obj.x, sy = obj.y;
-  const start = performance.now();
-  function step(now) {{
-    const t = Math.min((now - start) / duration, 1);
-    const ease = 1 - Math.pow(1 - t, 3);
-    obj.x = sx + (tx - sx) * ease;
-    obj.y = sy + (ty - sy) * ease;
-    draw();
-    if (t < 1) {{
-      animFrame = requestAnimationFrame(step);
-    }} else {{
-      obj.x = tx; obj.y = ty;
-      draw();
-      curPos.innerHTML = `x: ${{(obj.x/CANVAS_SIZE).toFixed(3)}} &nbsp;&nbsp; y: ${{(obj.y/CANVAS_SIZE).toFixed(3)}}`;
-      sendToStreamlit({{ type:'move', id: obj.id, x: obj.x, y: obj.y }});
-    }}
-  }}
-  requestAnimationFrame(step);
-}}
-
-// ── auto-select first object if none selected on load ───────────────────
-if (selectedId === null && objects.length > 0) {{
-  selectedId = objects[0].id;
-  const first = objects[0];
-  curPos.innerHTML = `x: ${{(first.x/CANVAS_SIZE).toFixed(3)}} &nbsp;&nbsp; y: ${{(first.y/CANVAS_SIZE).toFixed(3)}}`;
-  status.textContent = `selected obj ${{first.id}}  pos (${{(first.x/CANVAS_SIZE).toFixed(3)}}, ${{(first.y/CANVAS_SIZE).toFixed(3)}})`;
-}}
-
-// ── canvas click ──────────────────────────────────────────────────────────
-canvas.addEventListener('click', e => {{
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-
-  if (tool === 'arrow') {{
-    // hit-test objects (closest within radius)
-    let best = null, bestD = RADIUS + 4;
-    objects.forEach(obj => {{
-      const d = Math.hypot(obj.x - mx, obj.y - my);
-      if (d < bestD) {{ best = obj; bestD = d; }}
-    }});
-    selectedId = best ? best.id : null;
-    target = null;
-    if (best) {{
-      status.textContent = `selected obj ${{best.id}}  pos (${{(best.x/CANVAS_SIZE).toFixed(3)}}, ${{(best.y/CANVAS_SIZE).toFixed(3)}})`;
-      curPos.innerHTML = `x: ${{(best.x/CANVAS_SIZE).toFixed(3)}} &nbsp;&nbsp; y: ${{(best.y/CANVAS_SIZE).toFixed(3)}}`;
-      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
-      sendToStreamlit({{ type:'select', id: best.id, x: best.x, y: best.y }});
-      // auto-switch back to crosshair after selection
-      setTool('cross');
-    }} else {{
-      status.textContent = 'no object selected';
-      curPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
-      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
-      sendToStreamlit({{ type:'deselect' }});
-    }}
-    draw();
-
-  }} else if (tool === 'cross') {{
-    if (selectedId === null) {{
-      status.textContent = 'select an object first';
-      return;
-    }}
-    target = {{ x: mx, y: my }};
-    const obj = objects.find(o => o.id === selectedId);
-    if (obj) {{
-      status.textContent = `moving obj ${{obj.id}} → (${{(mx/CANVAS_SIZE).toFixed(3)}}, ${{(my/CANVAS_SIZE).toFixed(3)}})`;
-      tgtPos.innerHTML = `x: ${{(mx/CANVAS_SIZE).toFixed(3)}} &nbsp;&nbsp; y: ${{(my/CANVAS_SIZE).toFixed(3)}}`;
-      sendToStreamlit({{ type:'target', x: mx, y: my }});
-      animateTo(obj, mx, my);
-    }}
-  }}
-}});
-
-// ── communicate back to Streamlit ─────────────────────────────────────────
-function sendToStreamlit(data) {{
-  window.parent.postMessage({{
-    type: 'streamlit:setComponentValue',
-    value: data
-  }}, '*');
-}}
-
-draw();
-</script>
-</body>
-</html>
-"""
-
-    from streamlit.components.v1 import html as st_html
-    result = st_html(canvas_html, height=740, scrolling=False)
-
-    # Handle messages back from canvas via query params workaround
-    # (In production deploy, use st_canvas or a custom component for two-way binding)
-    # For now the tracker updates are shown based on click interactions above.
+# ── MODE TOGGLE ───────────────────────────────────────────────────────────────
+st.markdown("<hr>", unsafe_allow_html=True)
+_, col_toggle, _ = st.columns([1, 2, 1])
+with col_toggle:
+    st.markdown('<div class="section-title">Operation Mode</div>', unsafe_allow_html=True)
+    st.radio(
+        "Operation Mode",
+        options=["Ideal", "Predictive"],
+        horizontal=True,
+        key="app_mode",
+        label_visibility="collapsed",
+    )

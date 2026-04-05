@@ -1,0 +1,18 @@
+{
+  "weight_decay": 0.001,
+  "num_components": 6,
+  "n_epochs": 100,
+  "batch_size": 256,
+  "lr": 0.001,
+  "buffer_name": "combined_single_transitions_dual_range.h5",
+  "delta_norm_mean": [
+    0.002016958686764521,
+    0.013325114255222432
+  ],
+  "delta_norm_std": [
+    0.13264035817686928,
+    0.1200997735308598
+  ],
+  "state_dim": 4,
+  "action_dim": 4
+}

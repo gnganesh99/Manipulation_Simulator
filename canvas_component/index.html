@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#f5f5f5;
+    display:flex; flex-direction:column; align-items:flex-start; padding:4px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+  }
+  #toolbar { display:flex; align-items:center; margin-bottom:8px; gap:6px; }
+  .tbtn {
+    width:34px; height:34px; background:#efefef; border:1px solid #ccc;
+    border-radius:3px; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; font-size:16px; transition: all 0.12s;
+    color:#555; user-select:none;
+  }
+  .tbtn.active { background:#e0e0e0; border-color:#888; color:#111; box-shadow:0 0 0 1px #bbb; }
+  #mode-badge {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size:9px; letter-spacing:0.12em; text-transform:uppercase;
+    padding:3px 8px; border-radius:2px; margin-left:6px;
+    background:#e8f0e8; color:#3a5a1a; border:1px solid #b0c8a0;
+    transition: all 0.2s;
+  }
+  #mode-badge.predictive { background:#fef0e0; color:#9a5010; border-color:#e8c060; }
+  canvas { border:2px solid #556B2F; image-rendering:pixelated; display:block; }
+  #status {
+    font-size:10px; color:#888; margin-top:6px; letter-spacing:0.08em;
+    font-family: 'JetBrains Mono', 'Courier New', monospace; height:14px;
+  }
+  #tracker { margin-top:12px; width:510px; }
+  .tr-label {
+    font-size:9px; color:#999; text-transform:uppercase; letter-spacing:0.12em;
+    margin-bottom:3px; font-family: 'JetBrains Mono', 'Courier New', monospace;
+  }
+  .tr-value {
+    font-size:12px; color:#1a1a1a; letter-spacing:0.05em;
+    background:#fff; border:1px solid #ddd; border-radius:2px;
+    padding:5px 10px; margin-bottom:8px;
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <div class="tbtn" id="btn-arrow" title="Select (Arrow)">&#x2B06;</div>
+  <div class="tbtn" id="btn-cross" title="Set Target (Crosshair)">&#x271B;</div>
+  <div id="mode-badge">IDEAL</div>
+</div>
+
+<canvas id="c" width="500" height="500"></canvas>
+<div id="status">no object selected</div>
+
+<div id="tracker">
+  <div class="tr-label">Current Position (normalized)</div>
+  <div id="cur-pos" class="tr-value">x: &mdash; &nbsp;&nbsp; y: &mdash;</div>
+  <div class="tr-label">Target Position (normalized)</div>
+  <div id="tgt-pos" class="tr-value">x: &mdash; &nbsp;&nbsp; y: &mdash;</div>
+</div>
+
+<script>
+var CANVAS_SIZE = 500;
+var RADIUS = 12;
+
+var objects = [];
+var selectedId = null;
+var tool = 'cross';
+var mode = 'Ideal';
+var target = null;
+var initialized = false;
+var animFrame = null;
+
+var canvas   = document.getElementById('c');
+var ctx      = canvas.getContext('2d');
+var statusEl = document.getElementById('status');
+var btnArrow = document.getElementById('btn-arrow');
+var btnCross = document.getElementById('btn-cross');
+var modeBadge = document.getElementById('mode-badge');
+var curPos   = document.getElementById('cur-pos');
+var tgtPos   = document.getElementById('tgt-pos');
+
+// ── draw ───────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  ctx.fillStyle = '#FFF8F0';
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  if (target) {
+    ctx.strokeStyle = '#556B2F';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(target.x - 12, target.y); ctx.lineTo(target.x + 12, target.y);
+    ctx.moveTo(target.x, target.y - 12); ctx.lineTo(target.x, target.y + 12);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, 6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  for (var i = 0; i < objects.length; i++) {
+    var obj = objects[i];
+    var isSel = obj.id === selectedId;
+    if (isSel) {
+      ctx.strokeStyle = '#556B2F';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(obj.x, obj.y, RADIUS + 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#1a1a1a';
+    ctx.strokeStyle = isSel ? '#556B2F' : '#444';
+    ctx.lineWidth = isSel ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(obj.x, obj.y, RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+// ── tool ───────────────────────────────────────────────────────────────────
+function setTool(t) {
+  tool = t;
+  btnArrow.classList.toggle('active', t === 'arrow');
+  btnCross.classList.toggle('active', t === 'cross');
+  canvas.style.cursor = t === 'cross' ? 'crosshair' : 'default';
+}
+btnArrow.addEventListener('click', function() { setTool('arrow'); });
+btnCross.addEventListener('click', function() { setTool('cross'); });
+canvas.addEventListener('mouseenter', function() {
+  canvas.style.cursor = tool === 'arrow' ? 'default' : 'crosshair';
+});
+
+// ── animation ──────────────────────────────────────────────────────────────
+function animateTo(obj, tx, ty, duration, onDone) {
+  if (animFrame) cancelAnimationFrame(animFrame);
+  duration = duration || 400;
+  var sx = obj.x, sy = obj.y;
+  var startTime = performance.now();
+  function step(now) {
+    var t = Math.min((now - startTime) / duration, 1);
+    var ease = 1 - Math.pow(1 - t, 3);
+    obj.x = sx + (tx - sx) * ease;
+    obj.y = sy + (ty - sy) * ease;
+    draw();
+    if (t < 1) {
+      animFrame = requestAnimationFrame(step);
+    } else {
+      obj.x = tx; obj.y = ty;
+      draw();
+      curPos.innerHTML = 'x: ' + (obj.x / CANVAS_SIZE).toFixed(3) + ' &nbsp;&nbsp; y: ' + (obj.y / CANVAS_SIZE).toFixed(3);
+      if (onDone) onDone(obj);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+// ── canvas interaction ─────────────────────────────────────────────────────
+canvas.addEventListener('click', function(e) {
+  var rect = canvas.getBoundingClientRect();
+  var mx = e.clientX - rect.left;
+  var my = e.clientY - rect.top;
+
+  if (tool === 'arrow') {
+    var best = null, bestD = RADIUS + 4;
+    for (var i = 0; i < objects.length; i++) {
+      var d = Math.hypot(objects[i].x - mx, objects[i].y - my);
+      if (d < bestD) { best = objects[i]; bestD = d; }
+    }
+    selectedId = best ? best.id : null;
+    target = null;
+    if (best) {
+      statusEl.textContent = 'selected obj ' + best.id + '  pos (' +
+        (best.x / CANVAS_SIZE).toFixed(3) + ', ' + (best.y / CANVAS_SIZE).toFixed(3) + ')';
+      curPos.innerHTML = 'x: ' + (best.x / CANVAS_SIZE).toFixed(3) + ' &nbsp;&nbsp; y: ' + (best.y / CANVAS_SIZE).toFixed(3);
+      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
+      sendValue({ type: 'select', id: best.id, x: best.x, y: best.y, event_id: Date.now() });
+      setTool('cross');
+    } else {
+      statusEl.textContent = 'no object selected';
+      curPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
+      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
+      sendValue({ type: 'deselect', event_id: Date.now() });
+    }
+    draw();
+
+  } else if (tool === 'cross') {
+    if (selectedId === null) { statusEl.textContent = 'select an object first'; return; }
+    var obj = null;
+    for (var i = 0; i < objects.length; i++) {
+      if (objects[i].id === selectedId) { obj = objects[i]; break; }
+    }
+    if (!obj) return;
+
+    target = { x: mx, y: my };
+    tgtPos.innerHTML = 'x: ' + (mx / CANVAS_SIZE).toFixed(3) + ' &nbsp;&nbsp; y: ' + (my / CANVAS_SIZE).toFixed(3);
+    draw();
+
+    if (mode === 'Ideal') {
+      statusEl.textContent = 'moving obj ' + obj.id + ' to (' +
+        (mx / CANVAS_SIZE).toFixed(3) + ', ' + (my / CANVAS_SIZE).toFixed(3) + ')';
+      animateTo(obj, mx, my, 400, function(o) {
+        sendValue({ type: 'move', id: o.id, x: o.x, y: o.y, event_id: Date.now() });
+      });
+    } else {
+      statusEl.textContent = 'computing prediction for obj ' + obj.id + '...';
+      sendValue({
+        type: 'predict_request',
+        id: obj.id,
+        sx: obj.x / CANVAS_SIZE,
+        sy: obj.y / CANVAS_SIZE,
+        tx: mx / CANVAS_SIZE,
+        ty: my / CANVAS_SIZE,
+        event_id: Date.now()
+      });
+    }
+  }
+});
+
+// ── Streamlit communication ────────────────────────────────────────────────
+function sendValue(data) {
+  window.parent.postMessage({
+    isStreamlitMessage: true,
+    type: 'streamlit:setComponentValue',
+    value: data,
+    dataType: 'json'
+  }, '*');
+}
+
+function reportHeight() {
+  window.parent.postMessage({
+    isStreamlitMessage: true,
+    type: 'streamlit:setFrameHeight',
+    height: 720
+  }, '*');
+}
+
+window.addEventListener('message', function(event) {
+  if (!event.data || event.data.type !== 'streamlit:render') return;
+  var args = event.data.args;
+  if (!args) return;
+
+  // Always sync objects and mode from Python
+  objects = args.objects || [];
+  var newMode = args.mode || 'Ideal';
+  if (newMode !== mode) {
+    mode = newMode;
+    modeBadge.textContent = mode.toUpperCase();
+    modeBadge.className = mode === 'Predictive' ? 'predictive' : '';
+  }
+
+  if (!initialized) {
+    // First render: initialise selection and tool from Python
+    initialized = true;
+    selectedId = (args.selected_id !== null && args.selected_id !== undefined) ? args.selected_id : null;
+    if (selectedId === null && objects.length > 0) selectedId = objects[0].id;
+    tool = args.tool || 'cross';
+    setTool(tool);
+    modeBadge.textContent = mode.toUpperCase();
+    modeBadge.className = mode === 'Predictive' ? 'predictive' : '';
+    // Show initial position in tracker
+    for (var i = 0; i < objects.length; i++) {
+      if (objects[i].id === selectedId) {
+        curPos.innerHTML = 'x: ' + (objects[i].x / CANVAS_SIZE).toFixed(3) +
+          ' &nbsp;&nbsp; y: ' + (objects[i].y / CANVAS_SIZE).toFixed(3);
+        statusEl.textContent = 'ready — obj ' + selectedId + ' selected';
+        break;
+      }
+    }
+  } else {
+    // Subsequent renders: sync selectedId from Python if it changed (e.g. after seed)
+    if (args.selected_id !== null && args.selected_id !== undefined && args.selected_id !== selectedId) {
+      selectedId = args.selected_id;
+      target = null;
+      tgtPos.innerHTML = 'x: &mdash; &nbsp;&nbsp; y: &mdash;';
+    }
+  }
+
+  // Handle pending animation from prediction result
+  if (args.pending_animate) {
+    var pa = args.pending_animate;
+    var animObj = null;
+    for (var i = 0; i < objects.length; i++) {
+      if (objects[i].id === pa.id) { animObj = objects[i]; break; }
+    }
+    if (animObj) {
+      animObj.x = pa.from_x;
+      animObj.y = pa.from_y;
+      target = null;
+      tgtPos.innerHTML = 'x: ' + (pa.to_x / CANVAS_SIZE).toFixed(3) +
+        ' &nbsp;&nbsp; y: ' + (pa.to_y / CANVAS_SIZE).toFixed(3);
+      statusEl.textContent = 'model predicted: obj ' + pa.id + ' \u2192 (' +
+        (pa.to_x / CANVAS_SIZE).toFixed(3) + ', ' + (pa.to_y / CANVAS_SIZE).toFixed(3) + ')';
+      animateTo(animObj, pa.to_x, pa.to_y, 600, null);
+    }
+  } else {
+    draw();
+  }
+
+  reportHeight();
+});
+
+// Signal component ready to Streamlit
+window.parent.postMessage({
+  isStreamlitMessage: true,
+  type: 'streamlit:componentReady',
+  apiVersion: 1
+}, '*');
+
+draw();
+</script>
+</body>
+</html>
