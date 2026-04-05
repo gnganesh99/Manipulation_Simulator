@@ -1,6 +1,8 @@
 import numpy as np
 import torch
 import json
+from collision_detection import get_collision_indices, get_first_collision_point
+import random
 
 model_path = "./models/gmm_model0.pt"
 meta_path = "./models/gmm_model0_meta.json"
@@ -11,7 +13,7 @@ _META_CACHE = {}
 
 
 
-def get_next_state(state, target, action, mode="ideal"):
+def get_next_state(state, target, action, mode="ideal", all_positions=None, object_radius=12):
     mode = str(mode).strip().lower()
 
     state = np.asarray(state, dtype=np.float32)
@@ -36,17 +38,36 @@ def get_next_state(state, target, action, mode="ideal"):
         action1 = action_tensor[:, 1].cpu().numpy().ravel()
         delta_factor = (1 - sigmoid_type(action0[0] - (-0.5))) * sigmoid_type(action1[0] - 0.5)
         next_state = state + delta_s * delta_factor
-        return np.asarray(next_state, dtype=np.float32).clip(0, 1)
+        
+    else:
 
-    next_state = sample_next_state(
-        model_path=model_path,
-        meta_path=meta_path,
-        state_sample=state_tensor,
-        action_sample=action_tensor,
-        mode=mode,
-    )[0]
-    return np.asarray(next_state, dtype=np.float32).clip(0, 1)
+        next_state = sample_next_state(
+            model_path=model_path,
+            meta_path=meta_path,
+            state_sample=state_tensor,
+            action_sample=action_tensor,
+            mode=mode,
+        )[0]
 
+    next_state = np.asarray(next_state, dtype=np.float32).clip(0, 1)
+
+
+    if all_positions is not None and len(all_positions) > 1:
+        all_positions = np.asarray(all_positions, dtype=np.float32)
+        current_obj_idx  = np.where((all_positions == state).all(axis=1))[0]
+        if len(current_obj_idx) > 1:
+            print(f"Current object index for collision check: {current_obj_idx}")
+        all_positions = np.delete(all_positions, current_obj_idx, axis=0)  # Remove the current object's position from collision checks
+        object_radius = object_radius / 500  # Assuming a radius of 12 pixels for the object, normalized to [0, 1]
+
+        collision_point = get_first_collision_point(state, next_state, all_positions, object_width=object_radius*2, padding= -0.01)
+        #collision_indices = get_collision_indices(state, next_state, all_positions, object_width=object_radius*2, padding=0)
+
+        if collision_point is not None:
+            print(f"Collision detected! Original next state: {next_state}, Collision point: {collision_point}")
+            next_state = np.array(collision_point, dtype=np.float32).reshape(-1, 2).clip(0, 1)
+            
+    return next_state
 
 
 

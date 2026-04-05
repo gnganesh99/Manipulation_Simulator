@@ -5,6 +5,9 @@ import numpy as np
 import os
 import streamlit.components.v1 as stc
 
+CANVAS_SIZE = 500
+OBJECT_RADIUS = 12
+
 st.set_page_config(page_title="Object Mover", layout="wide")
 
 # ── minimal chrome ──────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ with left_col:
         rng = random.Random(1)
         margin = 15
         st.session_state.objects = [
-            {"id": 0, "x": rng.randint(margin, 500 - margin), "y": rng.randint(margin, 500 - margin)}
+            {"id": 0, "x": rng.randint(margin, CANVAS_SIZE - margin), "y": rng.randint(margin, CANVAS_SIZE - margin)}
         ]
         st.session_state.selected_id = 0
     if "tool" not in st.session_state:
@@ -99,7 +102,7 @@ with left_col:
         rng = random.Random(seed_objects)
         margin = 15
         st.session_state.objects = [
-            {"id": i, "x": rng.randint(margin, 500 - margin), "y": rng.randint(margin, 500 - margin)}
+            {"id": i, "x": rng.randint(margin, CANVAS_SIZE - margin), "y": rng.randint(margin, CANVAS_SIZE - margin)}
             for i in range(seed_objects)
         ]
         # Auto-select a random object so crosshair is immediately usable
@@ -131,10 +134,21 @@ with left_col:
                     t = np.array([[prev["tx"], prev["ty"]]])
                     a = np.array([[action1, action2]])
                     mode = prev.get("mode", st.session_state.app_mode).lower()
-                    st.session_state.target_pos = {"x": prev["tx"] * 500, "y": prev["ty"] * 500}
-                    ns = get_next_state(state=s, target=t, action=a, mode=mode)
-                    pred_x = float(np.clip(ns[0, 0], 0, 1)) * 500
-                    pred_y = float(np.clip(ns[0, 1], 0, 1)) * 500
+                    all_positions = np.array(
+                        [[obj["x"] / CANVAS_SIZE, obj["y"] / CANVAS_SIZE] for obj in st.session_state.objects],
+                        dtype=np.float32,
+                    )
+                    st.session_state.target_pos = {"x": prev["tx"] * CANVAS_SIZE, "y": prev["ty"] * CANVAS_SIZE}
+                    ns = get_next_state(
+                        state=s,
+                        target=t,
+                        action=a,
+                        mode=mode,
+                        all_positions=all_positions,
+                        object_radius=OBJECT_RADIUS,
+                    )
+                    pred_x = float(np.clip(ns[0, 0], 0, 1)) * CANVAS_SIZE
+                    pred_y = float(np.clip(ns[0, 1], 0, 1)) * CANVAS_SIZE
                     sel = next((o for o in st.session_state.objects if o["id"] == prev["id"]), None)
                     if sel:
                         st.session_state.pending_animate = {
@@ -143,8 +157,8 @@ with left_col:
                             "from_y": sel["y"],
                             "to_x": pred_x,
                             "to_y": pred_y,
-                            "target_x": prev["tx"] * 500,
-                            "target_y": prev["ty"] * 500,
+                            "target_x": prev["tx"] * CANVAS_SIZE,
+                            "target_y": prev["ty"] * CANVAS_SIZE,
                             "mode": mode,
                         }
                         sel["x"] = pred_x
