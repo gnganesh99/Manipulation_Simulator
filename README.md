@@ -61,8 +61,8 @@ The simulator is a Gausssian Mixture model that is trained on experimental datas
 
 This simulator is based on STM manipulation ideas and data involving carbon monoxide molecules on Cu(111). 
 
-Experimental support - **Mykola Telychko, CNMS, ORNL**.
-
+Experimental support - **Mykola Telychko, An-Ping Li - CNMS, ORNL**.
+Inputs and Feedback - **Rama Vasudevan - CNMS, ORNL**
 
 ## Contact
 
