@@ -8,7 +8,7 @@ The simulator is a Gausssian Mixture model that is trained on experimental datas
 
 
 
-## Open the App (Click the link below, No installs required!)
+## Open the App - Click the link below, No installs required!
 
 <p align="center">
   <a href="https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/">
@@ -61,7 +61,7 @@ The simulator is a Gausssian Mixture model that is trained on experimental datas
 
 This simulator is based on STM manipulation ideas and data involving carbon monoxide molecules on Cu(111). 
 
-Experimental support - **Mykola Telychko, An-Ping Li - CNMS, ORNL**.
+Experimental support - **Mykola Telychko - CNMS, ORNL**.
 Inputs and Feedback - **Rama Vasudevan - CNMS, ORNL**
 
 ## Contact
