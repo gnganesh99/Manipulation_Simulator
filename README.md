@@ -4,10 +4,11 @@ This app simulates the manipulation of carbon monoxide (CO) molecules using a sc
 
 It is inspired by experimental STM manipulation of CO molecules on a Cu(111) surface, where a selected molecule is guided toward a target position by adjusting the manipulation conditions. The simulator provides a simple interactive way to explore that process and visualize how particles move under different settings.
 
-The simulator is a Gausssian Mixture model that is trained on experimental datasets
+The simulator is a Gausssian Mixture model that is trained on experimental datasets. 
 
 
-## Open the App
+
+## Open the App (Click the link below, No installs required!)
 
 <p align="center">
   <a href="https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/">
@@ -22,10 +23,14 @@ The simulator is a Gausssian Mixture model that is trained on experimental datas
   <a href="https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/"><strong>https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/</strong></a>
 </p>
 
+
+
 ## Modes
 
 - `Ideal`: a simplified mode where the selected CO molecule moves toward the chosen target under favorable manipulation settings (Bias < 20 mV; Setpoint > 80nA).
 - `Predictive`: a data-driven mode where the next position is estimated from learned behavior based on experimental manipulation data.
+
+
 
 ## How to Use
 
@@ -56,7 +61,7 @@ The simulator is a Gausssian Mixture model that is trained on experimental datas
 
 This simulator is based on STM manipulation ideas and data involving carbon monoxide molecules on Cu(111). 
 
-Experimental support - Mykola Telychko, CNMS, ORNL.
+Experimental support - **Mykola Telychko, CNMS, ORNL**.
 
 
 ## Contact
