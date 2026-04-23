@@ -1,62 +1,64 @@
-# stm_co_mani_sim
-STM manipulation simulator using steamlit app
+# STM Manipulation Simulator
+
+This app simulates the manipulation of carbon monoxide (CO) molecules using a scanning tunneling microscope (STM).
+
+It is inspired by experimental STM manipulation of CO molecules on a Cu(111) surface, where a selected molecule is guided toward a target position by adjusting the manipulation conditions. The simulator provides a simple interactive way to explore that process and visualize how particles move under different settings.
+
+The simulator is a Gausssian Mixture model that is trained on experimental datasets
 
 
-This repo is under development.....
+## Open the App
 
+<p align="center">
+  <a href="https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/">
+    <img
+      src="https://img.shields.io/badge/OPEN%20THE%20APP-STM%20Manipulation%20Simulator-0A84FF?style=for-the-badge&logo=streamlit&logoColor=white"
+      alt="Open the STM Manipulation Simulator app"
+    />
+  </a>
+</p>
 
-# Object Mover — Simulation Interface
+<p align="center">
+  <a href="https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/"><strong>https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/</strong></a>
+</p>
 
-An interactive simulation tool for placing and moving circular objects within a bounded arena. Built with Streamlit.
+## Modes
 
-## 🚀 Launch App
+- `Ideal`: a simplified mode where the selected CO molecule moves toward the chosen target under favorable manipulation settings (Bias < 20 mV; Setpoint > 80nA).
+- `Predictive`: a data-driven mode where the next position is estimated from learned behavior based on experimental manipulation data.
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://manipulationsimulator-95u2rnvvz3af4ktuj8v7qj.streamlit.app/)
+## How to Use
 
-> Replace the link above with your Streamlit Cloud URL after deployment (see below).
-
----
-
-## Controls
-
-| Control | Description |
-|---|---|
-| **Seed Objects** | Number of objects to place (1–30) |
-| **SEED button** | Randomly place objects in the arena |
-| **⬆ Arrow tool** | Click to select an object |
-| **✛ Crosshair tool** | Click to set a target; selected object moves there |
-| **Action 1 / Action 2** | Parameters passed to the prediction model (10–90) |
-
-The **Tracker** panel shows the current and target positions of the selected object, normalised to [0, 1].
-
----
-
-## Deploy to Streamlit Community Cloud (free)
-
-1. Push this repo to GitHub (if not already there)
-2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub
-3. Click **"New app"** → select your repo → set **Main file path** to `app.py`
-4. Click **Deploy** — you'll get a public URL in ~1 minute
-5. Paste the URL into the badge link at the top of this README
-
----
+1. Open the app using the blue link above.
+2. Use `Seed Objects` and `SEED` to place particles on the canvas.
+3. Click the arrow tool to select a particle.
+4. Click the crosshair tool, then click a target point on the canvas.
+5. Adjust `Bias (mV)` and `Setpoint (nA)` to change the motion behavior.
+6. Switch between `Ideal` and `Predictive` mode as needed.
 
 ## Project Structure
 
-```
+```text
 .
-├── app.py               # Streamlit application
-├── prediction_utils.py  # Model inference hook (stub until model is ready)
-├── gaussian_model.pt    # TorchScript model (add when ready)
-└── requirements.txt     # Python dependencies
+|-- app.py
+|-- prediction_utils.py
+|-- collision_detection.py
+|-- canvas_component/
+|   `-- index.html
+|-- models/
+|   |-- gmm_model0.pt
+|   `-- gmm_model0_meta.json
+|-- requirements.txt
+`-- README.md
 ```
 
----
+## Acknowledgement / Credits
 
-## Adding the Prediction Model
+This simulator is based on STM manipulation ideas and data involving carbon monoxide molecules on Cu(111). 
 
-Once your `gaussian_model.pt` is ready:
+Experimental support - Mykola Telychko, CNMS, ORNL.
 
-1. Add `torch` to `requirements.txt`
-2. Uncomment the model-loading code in `prediction_utils.py`
-3. Uncomment the prediction hook in `app.py` (marked with `# Future: prediction hook`)
+
+## Contact
+
+For questions or feedback, please contact the repository maintainer.

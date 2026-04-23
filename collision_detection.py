@@ -1,11 +1,9 @@
 
 
 import math
-import random
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-import matplotlib.pyplot as plt
 import numpy as np
 
 
@@ -46,6 +44,108 @@ class Circle:
     def contains(self, px: float, py: float) -> bool:
         """Return True if point (px,py) lies inside the circle."""
         return (px - self.x) ** 2 + (py - self.y) ** 2 <= (self.r + self.padding) ** 2
+
+
+EPSILON = 1e-9
+SELF_MATCH_TOL = 1e-6
+CONTACT_BACKOFF = 1e-6
+
+
+def _as_point(point) -> np.ndarray:
+    """Return a 2D point as a flat float array."""
+    arr = np.asarray(point, dtype=np.float64).ravel()
+    if arr.size != 2:
+        raise ValueError(f"Expected a 2D point, got shape {arr.shape}")
+    return arr
+
+
+def _as_centers(labels) -> np.ndarray:
+    """Return obstacle centers as an (N, 2) float array."""
+    arr = np.asarray(labels, dtype=np.float64)
+    if arr.size == 0:
+        return np.empty((0, 2), dtype=np.float64)
+    return arr.reshape(-1, 2)
+
+
+def _effective_collision_radius(object_width: float, padding: float) -> float:
+    """
+    Treat labels as particle centers and object_width as the effective stop distance.
+
+    The caller currently passes the particle diameter here; for equal-sized particles
+    that is also the center-to-center contact distance. Negative padding from older
+    rectangle-based logic is ignored so we stop on first contact instead of allowing
+    visible overlap.
+    """
+    collision_radius = float(object_width)
+    if padding > 0:
+        collision_radius += float(padding)
+    return max(collision_radius, 0.0)
+
+
+def _self_indices_to_ignore(initial: np.ndarray, labels: np.ndarray) -> set[int]:
+    """
+    Ignore one obstacle that is effectively the moving particle's current position.
+
+    prediction_utils tries to remove the active particle before calling into this file,
+    but if that exact match fails because of float noise we still do not want the
+    particle to collide with itself immediately.
+    """
+    if len(labels) == 0:
+        return set()
+
+    distances = np.linalg.norm(labels - initial, axis=1)
+    matches = np.where(distances <= SELF_MATCH_TOL)[0]
+    if len(matches) == 1:
+        return {int(matches[0])}
+    return set()
+
+
+def _segment_circle_contact_t(
+    initial: np.ndarray,
+    final: np.ndarray,
+    center: np.ndarray,
+    radius: float,
+) -> Optional[float]:
+    """Return the earliest contact parameter t in [0, 1], or None if no contact."""
+    direction = final - initial
+    a = float(np.dot(direction, direction))
+    if a <= EPSILON:
+        return 0.0 if np.dot(initial - center, initial - center) <= radius * radius + EPSILON else None
+
+    relative = initial - center
+    c = float(np.dot(relative, relative) - radius * radius)
+    if c <= EPSILON:
+        return 0.0
+
+    b = float(2.0 * np.dot(relative, direction))
+    disc = b * b - 4.0 * a * c
+    if disc < -EPSILON:
+        return None
+
+    disc = max(disc, 0.0)
+    sqrt_disc = math.sqrt(disc)
+    roots = [(-b - sqrt_disc) / (2.0 * a), (-b + sqrt_disc) / (2.0 * a)]
+    valid_roots = [min(max(t, 0.0), 1.0) for t in roots if -EPSILON <= t <= 1.0 + EPSILON]
+    if not valid_roots:
+        return None
+
+    return min(valid_roots)
+
+
+def _contact_point(initial: np.ndarray, final: np.ndarray, t: float) -> np.ndarray:
+    """
+    Return a point on the segment just before contact to avoid tiny numerical overlap.
+    """
+    if t <= 0.0:
+        return initial.copy()
+
+    direction = final - initial
+    segment_length = float(np.linalg.norm(direction))
+    if segment_length <= EPSILON:
+        return initial.copy()
+
+    safe_t = max(0.0, t - CONTACT_BACKOFF / segment_length)
+    return initial + safe_t * direction
 
 
 
@@ -96,25 +196,29 @@ def segment_hits_rect(p, q, rect: Rect) -> bool:
 def get_collision_indices(initial, final, labels, object_width, padding = 0):
 
     """
-    Check for collisions across the manipulation path from initial to final coordinates with given labels (obstacles).
+    Check whether motion from initial to final hits any particle centers in labels.
     Inputs:
         - initial: initial coordinates
         - final: final coordinates
-        - labels: array of shape (N, 2) containing the coordinates of the labels (obstacles)
-        - object_width: width of the object being manipulated (float)
-        - padding: additional padding to consider around the obstacles (float)
+        - labels: array of shape (N, 2) containing obstacle center coordinates
+        - object_width: effective center-to-center stop distance
+        - padding: optional extra collision slack
 
     Outputs:
         - collision_indices: list of indices of labels that collide with the path from initial to final coordinates
     """
 
 
-    initial = np.array(initial).ravel()
-    final = np.array(final).ravel() 
+    initial = _as_point(initial)
+    final = _as_point(final)
+    labels = _as_centers(labels)
+    collision_radius = _effective_collision_radius(object_width, padding)
+    ignored_indices = _self_indices_to_ignore(initial, labels)
     collision_indices = []
     for i, label in enumerate(labels):
-        obstacle = Rect(label[0], label[1], object_width, object_width, padding)
-        if segment_hits_rect(initial, final, obstacle):
+        if i in ignored_indices:
+            continue
+        if _segment_circle_contact_t(initial, final, label, collision_radius) is not None:
             collision_indices.append(i)
     
     return collision_indices
@@ -163,43 +267,40 @@ def get_first_collision_point(
     padding: float = 0,
 ):
     """
-    Return the first point of collision along the segment from initial to final.
+    Return the first center position along the segment where a moving particle should stop.
 
     Inputs:
         - initial:      initial coordinates
         - final:        final coordinates
-        - labels:       array of shape (N, 2) with obstacle positions
-        - object_width: width of each square obstacle
-        - padding:      additional padding around each obstacle
+        - labels:       array of shape (N, 2) with obstacle center positions
+        - object_width: effective center-to-center stop distance
+        - padding:      optional extra collision slack
 
     Outputs:
         - The (x, y) point of first collision, or None if the path is clear.
     """
-    initial = np.array(initial).ravel()
-    final = np.array(final).ravel()
-    labels = np.array(labels).reshape(-1, 2)
+    initial = _as_point(initial)
+    final = _as_point(final)
+    labels = _as_centers(labels)
+    collision_radius = _effective_collision_radius(object_width, padding)
+    ignored_indices = _self_indices_to_ignore(initial, labels)
 
-    collision_indices = get_collision_indices(initial, final, labels, object_width, padding)
-    if not collision_indices or len(collision_indices) == 0:
+    if len(labels) == 0:
         return None
 
+    best_t = float("inf")
     best_point = None
-    best_dist = float('inf')
 
-    for i in collision_indices:
-        label = labels[i]
-        obstacle = Rect(label[0], label[1], object_width, object_width, padding)
+    for i, label in enumerate(labels):
+        if i in ignored_indices:
+            continue
 
-        # If initial is already inside the obstacle, it is the collision point
-        if obstacle.contains(*initial):
-            return tuple(initial)
+        t = _segment_circle_contact_t(initial, final, label, collision_radius)
+        if t is None:
+            continue
 
-        point = segment_rect_intersection_point(initial, final, obstacle)
-        point = np.asarray(point).ravel() if point is not None else None
-        if point is not None:
-            dist = (point[0] - initial[0]) ** 2 + (point[1] - initial[1]) ** 2
-            if dist < best_dist:
-                best_dist = dist
-                best_point = point
+        if t < best_t:
+            best_t = t
+            best_point = _contact_point(initial, final, t)
 
     return np.asarray(best_point, dtype=np.float32).ravel() if best_point is not None else None

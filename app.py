@@ -8,7 +8,7 @@ import streamlit.components.v1 as stc
 CANVAS_SIZE = 500
 OBJECT_RADIUS = 12
 
-st.set_page_config(page_title="Object Mover", layout="wide")
+st.set_page_config(page_title="STM Manipulation Simulator", layout="wide")
 
 # ── minimal chrome ──────────────────────────────────────────────────────────
 st.markdown("""
@@ -18,8 +18,8 @@ st.markdown("""
   .stApp { background: #f5f5f5; }
   div[data-testid="stVerticalBlock"] > div { gap: 0.4rem; }
   .block-container { padding: 1.5rem 2rem; }
-  h1 { font-size: 1.1rem; letter-spacing: 0.15em; color: #666; font-weight: 400; margin-bottom: 1.5rem; }
-  label, .stSlider label, .stNumberInput label { font-size: 0.72rem !important; letter-spacing: 0.12em; color: #888 !important; text-transform: uppercase; }
+  h1 { font-size: 1.1rem; letter-spacing: 0.08em; color: #666; font-weight: 400; margin-bottom: 1.5rem; }
+  label, .stSlider label, .stNumberInput label { font-size: 0.72rem !important; letter-spacing: 0.04em; color: #888 !important; }
   .stButton > button {
     background: #efefef; border: 1px solid #ccc; color: #333;
     font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
@@ -31,7 +31,7 @@ st.markdown("""
     background: #fff; border: 1px solid #ddd; border-radius: 2px;
     padding: 0.6rem 0.8rem; margin-bottom: 0.4rem;
   }
-  .metric-label { font-size: 0.65rem; color: #999; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 0.25rem; }
+  .metric-label { font-size: 0.65rem; color: #999; letter-spacing: 0.08em; margin-bottom: 0.25rem; }
   .metric-value { font-size: 0.95rem; color: #1a1a1a; letter-spacing: 0.05em; }
   hr { border-color: #e0e0e0; margin: 1rem 0; }
   .tool-btn {
@@ -41,11 +41,19 @@ st.markdown("""
     transition: all 0.15s; user-select: none;
   }
   .tool-btn.active { background: #e0e0e0; border-color: #888; box-shadow: 0 0 0 1px #bbb; }
-  .section-title { font-size: 0.65rem; color: #999; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 0.6rem; margin-top: 1rem; }
+  .section-title { font-size: 0.65rem; color: #999; letter-spacing: 0.08em; margin-bottom: 0.6rem; margin-top: 1rem; }
+  .subtitle { font-size: 0.82rem; color: #7a7a7a; margin-top: -1.0rem; margin-bottom: 1.2rem; }
+  .repo-link { font-size: 0.74rem; color: #666; margin-top: 1.6rem; margin-bottom: 0.2rem; }
+  .repo-link a { color: #0A84FF; text-decoration: none; font-weight: 600; }
+  .repo-link a:hover { text-decoration: underline; }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1>OBJECT MOVER / SIMULATION INTERFACE</h1>", unsafe_allow_html=True)
+st.markdown("<h1>STM Manipulation Simulator</h1>", unsafe_allow_html=True)
+st.markdown(
+    '<div class="subtitle">This app simulates the STM manipulation of CO molecules on Cu(111) surface</div>',
+    unsafe_allow_html=True,
+)
 
 # ── Bidirectional canvas component ───────────────────────────────────────────
 _canvas = stc.declare_component(
@@ -62,8 +70,8 @@ with right_col:
     seed_btn = st.button("⬡  SEED", key="seed_btn")
 
     st.markdown('<div class="section-title">Actions</div>', unsafe_allow_html=True)
-    action1 = st.slider("Action 1", min_value=10, max_value=90, value=50, key="action1")
-    action2 = st.slider("Action 2", min_value=10, max_value=90, value=50, key="action2")
+    action1 = st.slider("Bias (mV)", min_value=10, max_value=90, value=20, key="action1")
+    action2 = st.slider("Setpoint (nA)", min_value=10, max_value=90, value=80, key="action2")
     st.markdown('<div class="section-title">Operation Mode</div>', unsafe_allow_html=True)
     st.radio(
         "Operation Mode",
@@ -183,3 +191,9 @@ with left_col:
 
 
 # ── MODE TOGGLE ───────────────────────────────────────────────────────────────
+st.markdown(
+    '<div class="repo-link">For more details visit the original GitHub repo: '
+    '<a href="https://github.com/gnganesh99/Manipulation_Simulator" target="_blank">'
+    'https://github.com/gnganesh99/Manipulation_Simulator</a></div>',
+    unsafe_allow_html=True,
+)
